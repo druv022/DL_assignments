@@ -28,7 +28,62 @@ class VanillaRNN(nn.Module):
     def __init__(self, seq_length, input_dim, num_hidden, num_classes, batch_size, device='cpu'):
         super(VanillaRNN, self).__init__()
         # Initialization here ...
+        self.seq_length = seq_length
+        self.batch_size = batch_size
+
+        self.unfold_layers = {}
+
+        # layer index starts from 1
+        for layer in torch.arange(1,seq_length+1):
+            # adding input to hidden layer
+            self.unfold_layers['input_hidden_t'+ str(int(layer))] = nn.Linear(input_dim, num_hidden)
+            self.unfold_layers['input_hidden_t'+ str(int(layer))].weight.data.normal_(0.0,1e-2)
+            self.unfold_layers['input_hidden_t'+ str(int(layer))].bias.data.fill_(0.0)
+
+            # adding recurrent layer
+            self.unfold_layers['hidden_t'+str(int(layer)-1)+'_hidden_t'+ str(int(layer))] = nn.Linear(num_hidden, num_hidden)
+            self.unfold_layers['hidden_t'+str(int(layer)-1)+'_hidden_t'+ str(int(layer))].weight.data.normal_(0.0,1e-2)
+            self.unfold_layers['hidden_t'+str(int(layer)-1)+'_hidden_t'+ str(int(layer))].bias.data.fill_(0.0)
+
+            # adding hidden to output layer
+            self.unfold_layers['hidden_output_t' + str(int(layer))]  = nn.Linear(num_hidden, num_classes)
+            self.unfold_layers['hidden_output_t' + str(int(layer))].weight.data.normal_(0.0,1e-2)
+            self.unfold_layers['hidden_output_t' + str(int(layer))].bias.data.fill_(0.0)
+
+        # initialization for first time step
+        self.h_init = torch.zeros(batch_size,num_hidden)
+        self.b_init = torch.zeros(batch_size,num_hidden)
+
+        # non-linearity
+        self.tanh = nn.Tanh()
+
+        self.modules = nn.ModuleDict(self.unfold_layers)
+
 
     def forward(self, x):
         # Implementation here ...
-        pass
+        # batch size, length of sequence, embedding dimension/one-hot vector dim
+        b, l = x.size()
+
+        assert l == self.seq_length ,"Sequence length mismatch"
+        assert b == self.batch_size, "Batch size mismatch"
+
+        h_t = []
+        p_t = []
+        
+        # layer index starts from 1
+        for layer in torch.arange(1, self.seq_length+1):
+            # initialization at first time step
+            if layer == 1:
+                h_t.append(self.h_init)
+
+            h_t.append(self.tanh(self.unfold_layers['input_hidden_t' + str(int(layer))](torch.unsqueeze(x[:,int(layer)-1],1)) + 
+                    self.unfold_layers['hidden_t'+str(int(layer)-1)+'_hidden_t'+ str(int(layer))](h_t[int(layer)-1])))
+            p_t.append(self.unfold_layers['hidden_output_t' + str(int(layer))](h_t[int(layer)]))
+        
+        
+        return p_t[-1]
+
+
+
+                    

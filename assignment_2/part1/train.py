@@ -26,9 +26,10 @@ import numpy as np
 import torch
 from torch.utils.data import DataLoader
 
-from part1.dataset import PalindromeDataset
-from part1.vanilla_rnn import VanillaRNN
-from part1.lstm import LSTM
+# removed part1 for prefix of files (eg: part1.dataset => dataset)
+from dataset import PalindromeDataset
+from vanilla_rnn import VanillaRNN
+from lstm import LSTM
 
 # You may want to look into tensorboardX for logging
 # from tensorboardX import SummaryWriter
@@ -40,18 +41,25 @@ def train(config):
     assert config.model_type in ('RNN', 'LSTM')
 
     # Initialize the device which to run the model on
-    device = torch.device(config.device)
+    # device = torch.device(config.device)
+    device = torch.device('cpu')
 
     # Initialize the model that we are going to use
-    model = None  # fixme
+    if config.model_type == 'RNN':
+        model = VanillaRNN(config.input_length, config.input_dim, config.num_hidden,config.num_classes, config.batch_size, device=config.device)
+    elif config.model_type == 'LSTM':
+        model = LSTM(config.input_length, config.input_dim, config.num_hidden,config.num_classes, config.batch_size, device=config.device)
+
+    model.to(device)
 
     # Initialize the dataset and data loader (note the +1)
     dataset = PalindromeDataset(config.input_length+1)
     data_loader = DataLoader(dataset, config.batch_size, num_workers=1)
 
     # Setup the loss and optimizer
-    criterion = None  # fixme
-    optimizer = None  # fixme
+    criterion = torch.nn.CrossEntropyLoss()  # fixme
+    # optimizer = torch.optim.RMSprop(model.parameters())
+    optimizer = torch.optim.Adam(model.parameters())
 
     for step, (batch_inputs, batch_targets) in enumerate(data_loader):
 
@@ -59,6 +67,11 @@ def train(config):
         t1 = time.time()
 
         # Add more code here ...
+        optimizer.zero_grad()
+
+        model.train()
+        y = model(batch_inputs.to(device))
+        
 
         ############################################################################
         # QUESTION: what happens here and why?
@@ -68,8 +81,12 @@ def train(config):
 
         # Add more code here ...
 
-        loss = np.inf   # fixme
-        accuracy = 0.0  # fixme
+        loss = criterion(y, batch_targets.to(device))   # fixme
+        loss.backward()
+
+        pred_index = np.argmax(y.detach().numpy(),axis=1)
+        correct = np.count_nonzero(np.equal(pred_index,batch_targets),axis=0)
+        accuracy = correct/batch_targets.shape[0]
 
         # Just for time measurement
         t2 = time.time()
