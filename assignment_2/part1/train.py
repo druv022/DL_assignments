@@ -41,8 +41,7 @@ def train(config):
     assert config.model_type in ('RNN', 'LSTM')
 
     # Initialize the device which to run the model on
-    # device = torch.device(config.device)
-    device = torch.device('cpu')
+    device = torch.device(config.device)
 
     # Initialize the model that we are going to use
     if config.model_type == 'RNN':
@@ -50,7 +49,7 @@ def train(config):
     elif config.model_type == 'LSTM':
         model = LSTM(config.input_length, config.input_dim, config.num_hidden,config.num_classes, config.batch_size, device=config.device)
 
-    model.to(device)
+    model = model.to(device)
 
     # Initialize the dataset and data loader (note the +1)
     dataset = PalindromeDataset(config.input_length+1)
@@ -58,8 +57,8 @@ def train(config):
 
     # Setup the loss and optimizer
     criterion = torch.nn.CrossEntropyLoss()  # fixme
-    # optimizer = torch.optim.RMSprop(model.parameters())
-    optimizer = torch.optim.Adam(model.parameters())
+    optimizer = torch.optim.RMSprop(model.parameters(),lr=config.learning_rate)
+    # optimizer = torch.optim.Adam(model.parameters())
 
     for step, (batch_inputs, batch_targets) in enumerate(data_loader):
 
@@ -83,9 +82,11 @@ def train(config):
 
         loss = criterion(y, batch_targets.to(device))   # fixme
         loss.backward()
+        optimizer.step()
 
-        pred_index = np.argmax(y.detach().numpy(),axis=1)
-        correct = np.count_nonzero(np.equal(pred_index,batch_targets),axis=0)
+        _, pred_index = torch.max(y,1)
+        pred_index = pred_index.to('cpu')
+        correct = np.count_nonzero(np.equal(pred_index.detach().numpy(),batch_targets),axis=0)
         accuracy = correct/batch_targets.shape[0]
 
         # Just for time measurement
