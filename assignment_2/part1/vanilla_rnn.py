@@ -31,31 +31,20 @@ class VanillaRNN(nn.Module):
         self.seq_length = seq_length
         self.batch_size = batch_size
 
-        self.unfold_layers = {}
-
-        # adding input to hidden layer
-        self.unfold_layers['input_hidden'] = nn.Linear(input_dim, num_hidden)
-        self.unfold_layers['input_hidden'].weight.data.normal_(0.0,1e-2)
-        self.unfold_layers['input_hidden'].bias.data.fill_(0.0)
-
-        # adding recurrent layer
-        self.unfold_layers['hidden'] = nn.Linear(num_hidden, num_hidden)
-        self.unfold_layers['hidden'].weight.data.normal_(0.0,1e-2)
-        self.unfold_layers['hidden'].bias.data.fill_(0.0)
-
-        # adding hidden to output layer
-        self.unfold_layers['hidden_output']  = nn.Linear(num_hidden, num_classes)
-        self.unfold_layers['hidden_output'].weight.data.normal_(0.0,1e-2)
-        self.unfold_layers['hidden_output'].bias.data.fill_(0.0)
+        self.w_hx = nn.Parameter(torch.FloatTensor(num_hidden, input_dim))
+        nn.init.normal_(self.w_hx, 0.0, 1e-2)
+        self.w_hh = nn.Parameter(torch.FloatTensor(num_hidden, num_hidden))
+        nn.init.normal_(self.w_hh, 0.0, 1e-2)
+        #self.bias_h = nn.Parameter(torch.zeros(num_hidden))
+        self.w_ph = nn.Parameter(torch.FloatTensor(num_classes, num_hidden))
+        nn.init.normal_(self.w_ph, 0.0, 1e-2)
+        #self.bias_p = nn.Parameter(torch.zeros(num_classes))
 
         # initialization for first time step
         self.h_init = torch.zeros(batch_size,num_hidden).to(device)
-        self.b_init = torch.zeros(batch_size,num_hidden).to(device)
 
         # non-linearity
         self.tanh = nn.Tanh()
-
-        self.modules = nn.ModuleDict(self.unfold_layers)
 
 
     def forward(self, x):
@@ -75,9 +64,9 @@ class VanillaRNN(nn.Module):
             if layer == 1:
                 h_t.append(self.h_init)
 
-            h_t.append(self.tanh(self.unfold_layers['input_hidden'](torch.unsqueeze(x[:,int(layer)-1],1)) + 
-                    self.unfold_layers['hidden'](h_t[int(layer)-1])))
-            p_t.append(self.unfold_layers['hidden_output'](h_t[int(layer)]))
+            h_t.append(self.tanh(torch.mm(torch.unsqueeze(x[:,int(layer)-1],1),self.w_hx.transpose(1,0)) + 
+                    torch.mm(h_t[int(layer)-1], self.w_hh)))# + self.bias_h)
+            p_t.append(torch.mm(h_t[int(layer)],self.w_ph.transpose(1,0)))# + self.bias_p)
         
         
         return p_t[-1]
