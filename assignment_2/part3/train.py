@@ -32,24 +32,7 @@ from torch.utils.data import DataLoader
 from dataset import TextDataset
 from model import TextGenerationModel
 import os
-################################################################################
-    # def sample(h, seed_ix, n):
-    #   """ 
-    #   sample a sequence of integers from the model 
-    #   h is memory state, seed_ix is seed letter for first time step
-    #   """
-    #   x = np.zeros((vocab_size, 1))
-    #   x[seed_ix] = 1
-    #   ixes = []
-    #   for t in xrange(n):
-    #     h = np.tanh(np.dot(Wxh, x) + np.dot(Whh, h) + bh)
-    #     y = np.dot(Why, h) + by
-    #     p = np.exp(y) / np.sum(np.exp(y))
-    #     ix = np.random.choice(range(vocab_size), p=p.ravel())
-    #     x = np.zeros((vocab_size, 1))
-    #     x[ix] = 1
-    #     ixes.append(ix)
-    # return ixes
+import shutil
 
 
 def train(config):
@@ -71,8 +54,25 @@ def train(config):
 
     # Setup the loss and optimizer
     criterion = torch.nn.CrossEntropyLoss(reduce=True)  # fixme
-    optimizer = optim.RMSprop(model.parameters(), lr=config.learning_rate, weight_decay=0.0005)  # fixme
+    optimizer = optim.RMSprop(model.parameters(), lr=config.learning_rate)  # fixme
+    # optimizer = optim.Adam(model.parameters(), lr=config.learning_rate) 
     step = 1
+
+    # Learning rate scheduler
+    lr_scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=config.learning_rate_step, gamma=config.learning_rate_decay)
+
+    if config.resume:
+        if os.path.isfile(config.resume):
+            print("Loading checkpoint '{}'".format(config.resume))
+            checkpoint = torch.load(config.resume)
+            step = checkpoint['step']
+            model.load_state_dict(checkpoint['state_dict'])
+            optimizer.load_state_dict(checkpoint['optimizer'])
+            lr_scheduler.load_state_dict(checkpoint['lr_scheduler'])
+            print("Checkpoint loaded '{}', steps {}".format(config.resume, checkpoint['step']))
+
+    best_accuracy = 0.0
+
     for epochs in range(30):
 
         for (batch_inputs, batch_targets) in data_loader:
@@ -91,15 +91,20 @@ def train(config):
             optimizer.zero_grad()
 
             model.train()
+            model.init_hidden(config.batch_size)
             y = model(batch_inputs_onehot.to(device))
 
             loss = criterion(y.transpose(2,1),batch_targets)
             loss.backward()
             optimizer.step()
+            lr_scheduler.step()
+
             _, predictions = torch.max(y, dim=2, keepdim=True)
             predictions = (predictions.squeeze(-1) == batch_targets).float()
 
             accuracy = torch.mean(predictions)  # fixme
+
+            is_best = accuracy > best_accuracy
 
             # Just for time measurement
             t2 = time.time()
@@ -112,16 +117,36 @@ def train(config):
                         datetime.now().strftime("%Y-%m-%d %H:%M"), step,
                         config.train_steps, config.batch_size, examples_per_second,
                         accuracy, loss
-                ))
-                
+                ))             
 
-            if step == config.sample_every:
+            # if step == config.sample_every:
+            if step % config.sample_every == 0:
                 # Generate some sentences by sampling from the model
-                # if not os.path.isdir(config.summary_path):
-                #    os.makedirs(config.summary_path) 
-               
-                # with open(os.path.join(config.summary_path,"index.txt"), "a+") as myfile:
-                #     myfile.write("--------------",str(step),"----------------")
+
+                rand_char_index = torch.randint(0,dataset.vocab_size,(1,)).long()
+                rand_char_onehot = torch.zeros(1, 1, dataset.vocab_size).scatter_(2,torch.unsqueeze(torch.unsqueeze(rand_char_index,1),2),1)
+
+                chars_ix = [rand_char_index.item()]
+                model.eval()
+                model.init_hidden(1)
+                for _ in torch.arange(1,config.seq_length):
+                    out = model(rand_char_onehot.to(device))
+                    _, out = torch.max(out, dim=2)
+                    chars_ix.append(out.item())
+                    rand_char_onehot = torch.zeros(1, 1, dataset.vocab_size).to(device).scatter_(2,torch.unsqueeze(out,2),1)
+
+                sentence = dataset.convert_to_string(chars_ix)
+
+                if not os.path.isdir(config.summary_path):
+                   os.makedirs(config.summary_path)
+
+                with open(os.path.join(config.summary_path,"Generated.txt"), "a+") as f:
+                    f.write("--------------"+str(step)+"----------------\n")
+                    f.write(sentence+"\n")
+                    print(sentence)
+
+                    
+
 
                 pass
                 
@@ -130,9 +155,27 @@ def train(config):
                 # If you receive a PyTorch data-loader error, check this bug report:
                 # https://github.com/pytorch/pytorch/pull/9655
                 break
+
             step+=1
+        
+        save_checkpoint({
+            'epoch': epochs + 1,
+            'step': step,
+            'state_dict': model.state_dict(),
+            'optimizer': optimizer.state_dict(),
+            'lr_scheduler':lr_scheduler.state_dict(),
+            'accuracy': accuracy
+        }, is_best)
+
+        if step > config.train_steps:
+            break
     print('Done training.')
 
+# save checkpoint
+def save_checkpoint(state, is_best, filename='checkpoint.pth.tar'):
+    torch.save(state, filename)
+    if is_best:
+        shutil.copyfile(filename, 'model_best.pth.tar')
 
  ################################################################################
  ################################################################################
@@ -149,7 +192,7 @@ if __name__ == "__main__":
     parser.add_argument('--lstm_num_layers', type=int, default=2, help='Number of LSTM layers in the model')
 
     # Training params
-    parser.add_argument('--batch_size', type=int, default=64, help='Number of examples to process in a batch')
+    parser.add_argument('--batch_size', type=int, default=128, help='Number of examples to process in a batch')
     parser.add_argument('--learning_rate', type=float, default=2e-3, help='Learning rate')
 
     # It is not necessary to implement the following three params, but it may help training.
@@ -164,7 +207,9 @@ if __name__ == "__main__":
     parser.add_argument('--summary_path', type=str, default="./summaries/", help='Output path for summaries')
     parser.add_argument('--print_every', type=int, default=5, help='How often to print training progress')
     parser.add_argument('--sample_every', type=int, default=100, help='How often to sample from the model')
+    # New mics params
     parser.add_argument('--device', type=str, default="cuda:0", help="Training device 'cpu' or 'cuda:0'")
+    parser.add_argument('--resume', type=str, default='checkpoint.pth.tar', help="Path to latest checkpoint")
 
     config = parser.parse_args()
 
