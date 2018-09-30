@@ -37,6 +37,7 @@ class TextGenerationModel(nn.Module):
 
         self.lstm = nn.LSTM(input_size=vocabulary_size, hidden_size=lstm_num_hidden, num_layers= lstm_num_layers, batch_first=True)
         self.linear = nn.Linear(lstm_num_hidden, vocabulary_size)
+        self.linear.weight.data.normal_(0.0,1e-2)
 
     def init_hidden(self, batch_size):
         self.h_n = torch.zeros(self.lstm_num_layers, batch_size, self.lstm_num_hidden).to(self.device)
