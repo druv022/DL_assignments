@@ -225,7 +225,7 @@ def main():
                 imgs = make_grid(sampled_imgs.view(n_samples,1,28,28),nrow=10)
                 imgs = imgs.cpu().numpy()
                 im_plot = plt.imshow(np.transpose(imgs,(1,2,0)),cmap='gray')
-                plt.savefig('img_'+str(epoch)+'.png')
+                plt.savefig('img_vae_'+str(epoch)+'.png')
 
     # --------------------------------------------------------------------
     #  Add functionality to plot plot the learned data manifold after
