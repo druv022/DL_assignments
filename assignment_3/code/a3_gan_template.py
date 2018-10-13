@@ -6,7 +6,11 @@ import torch.nn as nn
 import torchvision.transforms as transforms
 from torchvision.utils import save_image
 from torchvision import datasets
+from tensorboardX import SummaryWriter
+import numpy as np
 
+
+writer = SummaryWriter()
 
 class Generator(nn.Module):
     def __init__(self):
@@ -104,6 +108,7 @@ def train(dataloader, discriminator, generator, optimizer_G, optimizer_D, device
             batch_size = imgs.shape[0]
             imgs = imgs.view(batch_size,-1).to(device)
 
+            # true and fake labels
             true_labels = torch.ones(batch_size).to(device)
             fake_labels = torch.zeros(batch_size).to(device)
 
@@ -128,18 +133,17 @@ def train(dataloader, discriminator, generator, optimizer_G, optimizer_D, device
 
             loss_true = criterion(pred_x, true_labels)
 
-            # z_new = torch.randn((batch_size, args.latent_dim)).to(device)
-            # fake_imgs_new = generator(z_new)
-            # pred_z_new = discriminator(fake_imgs_new)
-            # loss_gen = criterion(pred_z_new, fake_labels)
+            z_new = torch.randn((batch_size, args.latent_dim)).to(device)
+            fake_imgs_new = generator(z_new)
+            pred_z_new = discriminator(fake_imgs_new)
+            loss_fake = criterion(pred_z_new, fake_labels)
 
-            loss_fake = criterion(pred_z.detach(), fake_labels)
+            # loss_fake = criterion(pred_z.detach(), fake_labels)
 
             loss_dm = 0.5*(loss_true + loss_fake)
 
             loss_dm.backward()
             optimizer_D.step()
-            
 
             # Save Images
             # -----------
@@ -153,8 +157,12 @@ def train(dataloader, discriminator, generator, optimizer_G, optimizer_D, device
                            'images/{}.png'.format(batches_done),
                            nrow=5, normalize=True)
 
+                # tensorboard visualization
+                writer.add_scalar('loss/Generator',loss_gen.item(), batches_done)
+                writer.add_scalar('loss/Discriminator',loss_dm.item(), batches_done)
+
                 print("Epoch: {}| step: {}/{}| Loss:: Gen: {}| Dis: {}".format(epoch,i,len(dataloader),loss_gen.item(), loss_dm.item()))
-                
+               
 
 
 def main():
@@ -194,6 +202,34 @@ def main():
     # report, e.g.:
     torch.save(generator.state_dict(), "mnist_generator.pt")
 
+    writer.close()
+
+# interpolation in latent space
+def interpolate():
+    # interpolation dir
+    os.makedirs('interpolation', exist_ok=True)
+
+    # Initialize the device which to run the model on
+    device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+
+    model = Generator().to(device)
+    model.load_state_dict(torch.load("mnist_generator.pt"))
+    model.eval()
+
+    num1 = torch.randn((1, 100)).to(device)
+    num2 = torch.randn((1, 100)).to(device)
+
+    batch_input = num1
+    for i, alpha in enumerate(np.linspace(start=0.0, stop=1.0, num=7)):
+        
+        z = (1-alpha) * num1 + alpha * num2
+        batch_input = torch.cat((batch_input,z.to(device) ), dim=0)
+    batch_input = torch.cat((batch_input, b), dim=0)
+
+    gen_img = model(batch_input)
+    gen_img = gen_img.view(gen_img.shape[0],1,28,28)
+    save_image(gen_img.cpu(),'interpolation/{}.png'.format("image"),
+                        nrow=9, normalize=True)
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
@@ -210,3 +246,6 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     main()
+
+    # interpolate in latent space between two images
+    interpolate()
