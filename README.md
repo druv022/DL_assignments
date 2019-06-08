@@ -28,10 +28,21 @@ In this lab, we study and implement Deep Generative Models, specifically Variati
 
 #### Results: 
 
-
+<p align="center">
+  <img src="assignment_3/code/images_5x5/VAE.gif" width="300" /><br />
+  <i>Training VAE</i>
+  <br />
+  <br />
+  <img src="assignment_3/code/images_VAE_2/manifold.png" width="500" /><br />
+  <i>Manifold learned by the VAE</i>
+  <br />
+  <br />
+  <img src="assignment_3/code/interpolation/image.png" width="500" /><br />
+  <i>Interpolation results from GAN </i>
+</p>
 
 ### Poster Presentations
 
-We presented Attention is all you Need paper by Vaswani et al. This was done in collaboration with [Vikrant Yadav](https://www.linkedin.com/in/vikrant-yadav-98134496/) and [Tarun Krishna](https://github.com/KrishnaTarun).
+We presented [Attention is all you Need](https://arxiv.org/abs/1706.03762) paper by Vaswani et al. This was done in collaboration with [Vikrant Yadav](https://www.linkedin.com/in/vikrant-yadav-98134496/) and [Tarun Krishna](https://github.com/KrishnaTarun).
 
 The poster can be found [here](https://github.com/druv022/Deep_Learning_Lab/blob/master/Poster/poster.pdf).
