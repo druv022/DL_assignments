@@ -134,11 +134,9 @@ def train(dataloader, discriminator, generator, optimizer_G, optimizer_D, device
             loss_true = criterion(pred_x, true_labels)
 
             z_new = torch.randn((batch_size, args.latent_dim)).to(device)
-            fake_imgs_new = generator(z_new)
+            fake_imgs_new = generator(z_new).detach()
             pred_z_new = discriminator(fake_imgs_new)
             loss_fake = criterion(pred_z_new, fake_labels)
-
-            # loss_fake = criterion(pred_z.detach(), fake_labels)
 
             loss_dm = 0.5*(loss_true + loss_fake)
 
@@ -224,7 +222,7 @@ def interpolate():
         
         z = (1-alpha) * num1 + alpha * num2
         batch_input = torch.cat((batch_input,z.to(device) ), dim=0)
-    batch_input = torch.cat((batch_input, b), dim=0)
+    batch_input = torch.cat((batch_input, num2), dim=0)
 
     gen_img = model(batch_input)
     gen_img = gen_img.view(gen_img.shape[0],1,28,28)

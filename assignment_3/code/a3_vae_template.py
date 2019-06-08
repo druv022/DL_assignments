@@ -7,6 +7,11 @@ from torchvision.utils import make_grid
 
 from datasets.bmnist import bmnist
 import numpy as np
+from tensorboardX import SummaryWriter
+from scipy.stats import norm
+
+
+writer = SummaryWriter()
 
 
 class Encoder(nn.Module):
@@ -119,10 +124,11 @@ class VAE(nn.Module):
 
         im_means = torch.mean(sampled_ims, dim=0)
 
-        return sampled_ims, im_means
+
+        return sampled_ims
 
 
-def epoch_iter(model, data, optimizer, device="cpu"):
+def epoch_iter(model, data, optimizer, epoch=0, device="cpu"):
     """
     Perform a single epoch for either the training or validation.
     use model.training to determine if in 'training mode' or not.
@@ -135,13 +141,15 @@ def epoch_iter(model, data, optimizer, device="cpu"):
     step = 0
 
     data_length = len(data)
-    for batch_inputs in data:
+    updates = 0
+    for batch_index, batch_inputs in enumerate(data):
         inputs = batch_inputs.view(batch_inputs.shape[0],-1)
 
+        updates += 1
         if model.training:
             optimizer.zero_grad()
 
-            elbo, _ = model(inputs.to(device))
+            elbo, out_images = model(inputs.to(device))
             elbo_loss += elbo.item()
 
             elbo.backward()
@@ -156,19 +164,19 @@ def epoch_iter(model, data, optimizer, device="cpu"):
                 elbo_loss += elbo.item()
 
 
-    average_epoch_elbo = elbo_loss/len(data.dataset)
+    average_epoch_elbo = elbo_loss/updates
 
     return -1*average_epoch_elbo
 
 
-def run_epoch(model, data, optimizer, device="cpu"):
+def run_epoch(model, data, optimizer, epoch=0, device="cpu"):
     """
     Run a train and validation epoch and return average elbo for each.
     """
     traindata, valdata = data
 
     model.train()
-    train_elbo = epoch_iter(model, traindata, optimizer, device=device)
+    train_elbo = epoch_iter(model, traindata, optimizer, epoch=epoch, device=device)
 
     model.eval()
     val_elbo = epoch_iter(model, valdata, optimizer, device=device)
@@ -202,12 +210,6 @@ def main():
 
     train_curve, val_curve = [], []
     for epoch in range(ARGS.epochs):
-        elbos = run_epoch(model, data, optimizer, device)
-        train_elbo, val_elbo = elbos
-        train_curve.append(train_elbo)
-        val_curve.append(val_elbo)
-        print(f"[Epoch {epoch}] train elbo: {train_elbo} val_elbo: {val_elbo}")
-
         # --------------------------------------------------------------------
         #  Add functionality to plot samples from model during training.
         #  You can use the make_grid functioanlity that is already imported.
@@ -215,28 +217,55 @@ def main():
         if epoch % (int((ARGS.epochs-1)/2)) == 0:
             with torch.no_grad():
                 n_samples=100
-                # sampled_imgs, img_means = model.sample(n_samples)
-                for batch_data in data[0]:
-                    inputs = batch_data.view(batch_data.shape[0],-1)
-                    _, sampled_imgs = model(inputs.to(device))
-                    sampled_imgs = sampled_imgs[:n_samples,:]
-                    break
+                sampled_imgs = model.sample(n_samples)
+                sampled_imgs = sampled_imgs[:n_samples,:]
 
                 imgs = make_grid(sampled_imgs.view(n_samples,1,28,28),nrow=10)
                 imgs = imgs.cpu().numpy()
                 im_plot = plt.imshow(np.transpose(imgs,(1,2,0)),cmap='gray')
-                plt.savefig('img_vae_'+str(epoch)+'.png')
+                plt.savefig('img_vae_gen_'+str(epoch)+'.png')
+
+
+        elbos = run_epoch(model, data, optimizer, device=device, epoch=epoch)
+        train_elbo, val_elbo = elbos
+        train_curve.append(train_elbo)
+        val_curve.append(val_elbo)
+        print(f"[Epoch {epoch}] train elbo: {train_elbo} val_elbo: {val_elbo}")
+
+        writer.add_scalar('ELBO/Train', train_elbo, epoch)
+        writer.add_scalar('ELBO/Test', val_elbo, epoch)
+
 
     # --------------------------------------------------------------------
     #  Add functionality to plot plot the learned data manifold after
     #  if required (i.e., if zdim == 2). You can use the make_grid
     #  functionality that is already imported.
     # --------------------------------------------------------------------
+    if ARGS.zdim==2:
+        model.eval()
+        with torch.no_grad():
+            num_points=20
+            digit_size = 28
+            manifold = np.zeros((digit_size*num_points, digit_size *num_points))
 
+            xx = norm.ppf(np.linspace(0.05,0.95,num_points))
+            yy = norm.ppf(np.linspace(0.05,0.95,num_points))
+
+            for i, yi in enumerate(yy):
+                for j,xi in enumerate(xx):
+                    z = torch.from_numpy((np.array([[xi, yi]]))).to(device)
+                    x_hat = model.decoder(z.float())
+                    x = x_hat.view(digit_size, digit_size)
+                    manifold[i*digit_size:(i+1)*digit_size, j*digit_size:(j+1)*digit_size] = x
+
+            plt.figure(figsize=(10,10))
+            plt.imshow(manifold, cmap='gray')
+            plt.savefig("manifold.png")
     
 
 
     save_elbo_plot(train_curve, val_curve, 'elbo.pdf')
+    writer.close()
 
 
 if __name__ == "__main__":
@@ -245,6 +274,8 @@ if __name__ == "__main__":
                         help='max number of epochs')
     parser.add_argument('--zdim', default=20, type=int,
                         help='dimensionality of latent space')
+    parser.add_argument('--n_samples', default=100, type=int,
+                    help='number of samples to plot during training')
     
 
     ARGS = parser.parse_args()
